@@ -6,7 +6,7 @@ extern crate kvm;
 extern crate memmap;
 extern crate x86;
 
-use kvm::{Capability, Exit, IoDirection, System, Vcpu, VirtualMachine};
+use kvm::{Capability, Exit, IoDirection, Segment, System, Vcpu, VirtualMachine};
 use memmap::{Mmap, Protection};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -22,6 +22,7 @@ unsafe extern "C" fn use_the_port() {
 fn io_example() {
     let vaddr = VAddr::from_usize(&use_the_port as *const _ as _);
     println!("{} {}", pml4_index(vaddr), pdpt_index(vaddr));
+
     // set up a page table that identity maps the lower half of the address space
     let mut anon_mmap = Mmap::anonymous(2 * (1 << 20), Protection::ReadWrite).unwrap();
     let slice = unsafe { anon_mmap.as_mut_slice() };
@@ -86,78 +87,50 @@ fn io_example() {
     let mut sregs = vcpu.get_sregs().unwrap();
 
     // Set the code segment to have base 0, limit 4GB (flat segmentation)
-    sregs.cs.base = 0x0;
-    sregs.cs.limit = 0xffffffff;
-    sregs.cs.selector = 0x8;
-    sregs.cs._type = 0xb;
-    sregs.cs.present = 1;
-    sregs.cs.dpl = 0;
-    sregs.cs.db = 0;
-    sregs.cs.s = 1;
-    sregs.cs.l = 1;
-    sregs.cs.g = 1;
-    sregs.cs.avl = 0;
+    let segment_template = Segment {
+        base: 0x0,
+        limit: 0xffffffff,
+        selector: 0,
+        _type: 0,
+        present: 0,
+        dpl: 0,
+        db: 1,
+        s: 0,
+        l: 0,
+        g: 1,
+        avl: 0,
+        .. Default::default()
+    };
 
-    sregs.ss.base = 0x0;
-    sregs.ss.limit = 0xffffffff;
-    sregs.ss.selector = 0;
-    sregs.ss._type = 0;
-    sregs.ss.present = 0;
-    sregs.ss.dpl = 0;
-    sregs.ss.db = 1;
-    sregs.ss.s = 0;
-    sregs.ss.l = 0;
-    sregs.ss.g = 1;
-    sregs.ss.avl = 0;
+    sregs.cs = Segment {
+        selector: 0x8,
+        _type: 0xb,
+        present: 1,
+        db: 0,
+        s: 1,
+        l: 1,
+        .. segment_template
+    };
 
-    sregs.ds.base = 0x0;
-    sregs.ds.limit = 0xffffffff;
-    sregs.ds.selector = 0;
-    sregs.ds._type = 0;
-    sregs.ds.present = 0;
-    sregs.ds.dpl = 0;
-    sregs.ds.db = 1;
-    sregs.ds.s = 0;
-    sregs.ds.l = 0;
-    sregs.ds.g = 1;
-    sregs.ds.avl = 0;
+    sregs.ss = Segment {
+        .. segment_template
+    };
 
-    sregs.es.base = 0x0;
-    sregs.es.limit = 0xffffffff;
-    sregs.es.selector = 0;
-    sregs.es._type = 0;
-    sregs.es.present = 0;
-    sregs.es.dpl = 0;
-    sregs.es.db = 1;
-    sregs.es.s = 0;
-    sregs.es.l = 0;
-    sregs.es.g = 1;
-    sregs.es.avl = 0;
+    sregs.ds = Segment {
+        .. segment_template
+    };
 
-    sregs.fs.base = 0x0;
-    sregs.fs.base = 0x0;
-    sregs.fs.limit = 0xffffffff;
-    sregs.fs.selector = 0;
-    sregs.fs._type = 0;
-    sregs.fs.present = 0;
-    sregs.fs.dpl = 0;
-    sregs.fs.db = 1;
-    sregs.fs.s = 0;
-    sregs.fs.l = 0;
-    sregs.fs.g = 1;
-    sregs.fs.avl = 0;
+    sregs.es = Segment {
+        .. segment_template
+    };
 
-    sregs.gs.base = 0x0;
-    sregs.gs.limit = 0xffffffff;
-    sregs.gs.selector = 0;
-    sregs.gs._type = 0;
-    sregs.gs.present = 0;
-    sregs.gs.dpl = 0;
-    sregs.gs.db = 1;
-    sregs.gs.s = 0;
-    sregs.gs.l = 0;
-    sregs.gs.g = 1;
-    sregs.gs.avl = 0;
+    sregs.fs = Segment {
+        .. segment_template
+    };
+
+    sregs.gs = Segment {
+        .. segment_template
+    };
 
     // We don't need to populate the GDT if we have our segments setup
     // cr0 - protected mode on, paging enabled
