@@ -10,8 +10,10 @@ use kvm::{Capability, Exit, IoDirection, Segment, System, Vcpu, VirtualMachine};
 use memmap::{Mmap, Protection};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use x86::bits64::paging::*;
+
+use x86::shared::control_regs::*;
 use x86::shared::paging::*;
+use x86::bits64::paging::*;
 
 #[naked]
 unsafe extern "C" fn use_the_port() {
@@ -149,9 +151,24 @@ fn io_example() {
 
     // We don't need to populate the GDT if we have our segments setup
     // cr0 - protected mode on, paging enabled
-    sregs.cr0 = 0x80050033;
-    sregs.cr3 = 0x1000;
-    sregs.cr4 = 0x1406b0;
+    sregs.cr0 = (CR0_PROTECTED_MODE
+                 | CR0_MONITOR_COPROCESSOR
+                 | CR0_EXTENSION_TYPE
+                 | CR0_ENABLE_PAGING
+                 | CR0_NUMERIC_ERROR
+                 | CR0_WRITE_PROTECT
+                 | CR0_ALIGNMENT_MASK
+                 | CR0_ENABLE_PAGING)
+        .bits() as u64;
+    sregs.cr3 = PAGE_TABLE_P.as_u64();
+    sregs.cr4 = (CR4_ENABLE_PSE
+                 | CR4_ENABLE_PAE
+                 | CR4_ENABLE_GLOBAL_PAGES
+                 | CR4_ENABLE_SSE
+                 | CR4_UNMASKED_SSE
+                 | CR4_ENABLE_OS_XSAVE
+                 | CR4_ENABLE_SMEP)
+        .bits() as u64;
     sregs.efer = 0xd01;
 
     // Set the special registers
